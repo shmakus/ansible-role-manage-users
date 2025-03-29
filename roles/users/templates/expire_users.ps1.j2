@@ -1,0 +1,65 @@
+#!/usr/bin/env pwsh
+
+# Список пользователей из Ansible с указанием исходной оболочки
+$users = @(
+{% for user in combined_users if user.expiry_date is defined %}
+    [PSCustomObject]@{
+        Name = "{{ user.name }}"
+        ExpiryDate = "{{ user.expiry_date }}"
+        Shell = "{{ user.shell | default('/bin/bash') }}"
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+)
+
+# Текущая дата
+$currentDate = Get-Date
+
+foreach ($user in $users) {
+    Write-Output "Processing user: $($user.Name)"
+    $expiryDate = [DateTime]::ParseExact($user.ExpiryDate, "yyyy-MM-dd", $null)
+    
+    # Проверяем текущую оболочку пользователя
+    $currentShell = (getent passwd $user.Name).Split(":")[6]
+
+    if ($currentDate -gt $expiryDate) {
+        Write-Output "User $($user.Name) has expired (expiry date: $($user.ExpiryDate)). Disabling account."
+        
+        # Блокировка пароля
+        $passwdResult = & passwd -l $user.Name 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to lock password for user $($user.Name): $passwdResult"
+            exit 1
+        }
+        
+        # Установка оболочки /sbin/nologin
+        $usermodResult = & usermod -s /sbin/nologin $user.Name 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to set shell for user $($user.Name): $usermodResult"
+            exit 1
+        }
+        
+        Write-Output "User $($user.Name) disabled successfully."
+    } elseif ($currentShell -eq "/sbin/nologin" -and $currentDate -le $expiryDate) {
+        Write-Output "User $($user.Name) is disabled but expiry date is valid (expiry date: $($user.ExpiryDate)). Enabling account."
+        
+        # Разблокировка пароля
+        $passwdResult = & passwd -u $user.Name 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to unlock password for user $($user.Name): $passwdResult"
+            exit 1
+        }
+        
+        # Восстановление исходной оболочки
+        $usermodResult = & usermod -s $user.Shell $user.Name 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to restore shell for user $($user.Name): $usermodResult"
+            exit 1
+        }
+        
+        Write-Output "User $($user.Name) enabled successfully."
+    } else {
+        Write-Output "User $($user.Name) is still active (expiry date: $($user.ExpiryDate))."
+    }
+}
+
+exit 0
