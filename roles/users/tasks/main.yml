@@ -38,13 +38,13 @@
     all_dict: "{{ dict(all_users | map(attribute='name') | zip(all_users)) }}"
     group_dict: "{{ dict(group_users | map(attribute='name') | zip(group_users)) }}"
     host_dict: "{{ dict(host_users | map(attribute='name') | zip(host_users)) }}"
-  tags: [users]
+  tags: [users, expiry]
 
 - name: Combine all users with priority
   ansible.builtin.set_fact:
     combined_users: "{{ combined_users | default([]) + [item.value | combine({'password': lookup('vars', 'vault_' + item.key + '_password', default=vault_default_password)})] }}"
   loop: "{{ combined_dict | dict2items }}"
-  tags: [users]
+  tags: [users, expiry]
 
 - name: Manage users
   ansible.builtin.user:
@@ -91,3 +91,20 @@
   loop: "{{ combined_users }}"
   become: yes
   tags: [users, ssh]
+
+- name: Deploy user expiry script
+  ansible.builtin.template:
+    src: expire_users.ps1.j2
+    dest: /usr/local/bin/expire_users.ps1
+    mode: '0755'
+  become: yes
+  tags: [users, expiry]
+
+- name: Set up cron job for user expiry
+  ansible.builtin.cron:
+    name: "Check user expiry"
+    minute: "0"
+    hour: "0"
+    job: "pwsh -File /usr/local/bin/expire_users.ps1"
+  become: yes
+  tags: [expiry]
