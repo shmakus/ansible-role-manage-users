@@ -1,0 +1,21 @@
+---
+- name: Add Microsoft repository for PowerShell
+  ansible.builtin.shell: |
+    wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+    dpkg -i /tmp/packages-microsoft-prod.deb
+    apt-get update
+  args:
+    creates: /etc/apt/sources.list.d/microsoft-prod.list
+  become: yes
+  tags: [setup]
+
+- name: Ensure required packages are installed
+  ansible.builtin.apt:
+    name:
+      - curl
+      - cron
+      - powershell
+    state: present
+    update_cache: yes
+  become: yes
+  tags: [setup]
