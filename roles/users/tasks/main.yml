@@ -19,3 +19,11 @@
     update_cache: yes
   become: yes
   tags: [setup]
+
+- name: Create user groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ default_groups }}"
+  become: yes
+  tags: [groups]
