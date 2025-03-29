@@ -1,0 +1,7 @@
+---
+- name: Setup users on Ubuntu servers
+  hosts: all
+  vars_files:
+    - ./vault.yml
+  roles:
+    - users
