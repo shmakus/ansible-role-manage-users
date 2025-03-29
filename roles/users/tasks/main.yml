@@ -26,4 +26,35 @@
     state: present
   loop: "{{ default_groups }}"
   become: yes
-  tags: [groups]
+  tags: [groups, users]
+
+- name: Combine user dictionaries
+  ansible.builtin.set_fact:
+    combined_dict: "{{ all_dict | combine(group_dict, host_dict, recursive=True) }}"
+  vars:
+    all_users: "{{ groups['all'] | map('extract', hostvars) | map(attribute='users') | select('defined') | first | default([]) }}"
+    group_users: "{{ groups['dev_servers'] | map('extract', hostvars) | map(attribute='users') | select('defined') | first | default([]) }}"
+    host_users: "{{ hostvars[inventory_hostname].vars.users | default([]) }}"
+    all_dict: "{{ dict(all_users | map(attribute='name') | zip(all_users)) }}"
+    group_dict: "{{ dict(group_users | map(attribute='name') | zip(group_users)) }}"
+    host_dict: "{{ dict(host_users | map(attribute='name') | zip(host_users)) }}"
+  tags: [users]
+
+- name: Combine all users with priority
+  ansible.builtin.set_fact:
+    combined_users: "{{ combined_users | default([]) + [item.value | combine({'password': lookup('vars', 'vault_' + item.key + '_password', default=vault_default_password)})] }}"
+  loop: "{{ combined_dict | dict2items }}"
+  tags: [users]
+
+- name: Manage users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    state: "{{ item.state | default('present') }}"
+    groups: "{{ item.groups | default(omit) }}"
+    shell: "{{ (item.expiry_date is not defined or (item.expiry_date | to_datetime('%Y-%m-%d')) > (ansible_date_time.date | to_datetime('%Y-%m-%d'))) | ternary(item.shell | default('/bin/bash'), omit) }}"
+    password: "{{ (item.expiry_date is not defined or (item.expiry_date | to_datetime('%Y-%m-%d')) > (ansible_date_time.date | to_datetime('%Y-%m-%d'))) | ternary(item.password, omit) }}"
+    password_lock: "{{ item.password_lock | default(omit) }}"
+    remove: yes
+  loop: "{{ combined_users }}"
+  become: yes
+  tags: [users]
